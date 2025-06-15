@@ -1,4 +1,5 @@
 require("dotenv").config();
+
 const express = require("express");
 const http = require("http");
 const mongoose = require("mongoose");
@@ -12,16 +13,15 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const { authenticateUser, cleanExpiredTokens } = require("./middleware/authMiddleware");
 
-// Fonction fictive à définir/importer pour la tâche CRON
+// Fonction fictive pour la tâche CRON (à implémenter)
 async function updateLateTickets() {
-  // Exemple: mettre à jour tickets en retard
   console.log("Mise à jour des tickets en retard (fonction à implémenter)...");
 }
 
 const app = express();
 const server = http.createServer(app);
 
-// Config CORS
+// Configuration CORS
 const corsOptions = {
   origin: "http://localhost:3000",
   methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
@@ -37,8 +37,7 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Middleware nettoyage tokens expirés
 app.use(cleanExpiredTokens);
 
-(async () => {
-  // Connexion MongoDB
+async function connectDB() {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
       serverSelectionTimeoutMS: 5000,
@@ -49,6 +48,11 @@ app.use(cleanExpiredTokens);
     console.error("❌ Erreur MongoDB:", err);
     process.exit(1);
   }
+}
+
+async function startServer() {
+  // Connexion MongoDB
+  await connectDB();
 
   // Setup Socket.io
   const io = new Server(server, {
@@ -133,7 +137,9 @@ app.use(cleanExpiredTokens);
       console.log("⚠ Aucun client Socket.io connecté");
     }
   });
-})();
+}
+
+startServer();
 
 // Gestion arrêt propre
 process.on("SIGINT", () => {

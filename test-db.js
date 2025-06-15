@@ -1,11 +1,14 @@
 const mongoose = require("mongoose");
 
-const MONGO_URI = "mongodb://localhost:27017/gestionTickets"; // Remplace si besoin
-
 async function connectDB() {
   try {
-    await mongoose.connect(MONGO_URI);
-    console.log("✅ Connexion réussie à gestionTickets !");
+    // Connexion avec la variable d'environnement MONGO_URI
+    await mongoose.connect(process.env.MONGO_URI, {
+      // options recommandées (sans useNewUrlParser ni useUnifiedTopology car dépréciés)
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
+    console.log("✅ Connexion réussie à la base MongoDB !");
   } catch (err) {
     console.error("❌ Erreur de connexion :", err);
     process.exit(1);

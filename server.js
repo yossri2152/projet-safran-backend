@@ -7,37 +7,40 @@ const bodyParser = require("body-parser");
 const { Server } = require("socket.io");
 const cron = require("node-cron");
 const jwt = require("jsonwebtoken");
+
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const { authenticateUser, cleanExpiredTokens } = require("./middleware/authMiddleware");
 
+// Fonction fictive à définir/importer pour la tâche CRON
+async function updateLateTickets() {
+  // Exemple: mettre à jour tickets en retard
+  console.log("Mise à jour des tickets en retard (fonction à implémenter)...");
+}
+
 const app = express();
 const server = http.createServer(app);
 
-// Configuration CORS améliorée
+// Config CORS
 const corsOptions = {
   origin: "http://localhost:3000",
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
   credentials: true,
-  optionsSuccessStatus: 204,
 };
-
 app.use(cors(corsOptions));
+
+// Parse JSON et urlencoded
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// 🔐 Middleware pour nettoyer les tokens expirés
+// Middleware nettoyage tokens expirés
 app.use(cleanExpiredTokens);
 
-// Middleware pour passer io aux routes (UNIQUEMENT UNE FOIS, placé ici pour que io soit défini avant)
-let io;
 (async () => {
   // Connexion MongoDB
   try {
     await mongoose.connect(process.env.MONGO_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
@@ -47,20 +50,20 @@ let io;
     process.exit(1);
   }
 
-  // Configuration Socket.io
-  io = new Server(server, {
+  // Setup Socket.io
+  const io = new Server(server, {
     cors: {
       origin: "http://localhost:3000",
       methods: ["GET", "POST", "PUT", "DELETE"],
       credentials: true,
     },
     connectionStateRecovery: {
-      maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+      maxDisconnectionDuration: 2 * 60 * 1000, // 2 min
       skipMiddlewares: true,
     },
   });
 
-  // Middleware d'authentification pour Socket.io
+  // Auth Socket.io
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) return next(new Error("Authentication error"));
@@ -71,30 +74,24 @@ let io;
     });
   });
 
-  // Gestion des connexions Socket.io avec authentification
   io.on("connection", (socket) => {
-    console.log(`📡 Nouvelle connexion WebSocket: ${socket.id} (User ${socket.user.userId})`);
-
-    // Rejoindre une salle pour l'utilisateur
+    console.log(`📡 Nouvelle connexion WS: ${socket.id} (User ${socket.user.userId})`);
     socket.join(`user_${socket.user.userId}`);
 
-    // Rejoindre une salle admin si rôle admin
     if (socket.user.role === "admin") {
       socket.join("admin_room");
     }
 
-    // Gestion des déconnexions
     socket.on("disconnect", (reason) => {
       console.log(`🔌 Déconnexion: ${socket.id} (User ${socket.user.userId}) (${reason})`);
     });
 
-    // Gestion des erreurs
     socket.on("error", (err) => {
       console.error("❌ Erreur Socket:", err);
     });
   });
 
-  // Middleware pour passer io aux routes (après création de io)
+  // Middleware pour fournir io dans req
   app.use((req, res, next) => {
     req.io = io;
     next();
@@ -104,22 +101,22 @@ let io;
   app.use("/auth", authRoutes);
   app.use("/users", userRoutes);
 
-  // Middleware 404
-  app.use((req, res, next) => {
+  // 404
+  app.use((req, res) => {
     res.status(404).json({ message: "Route non trouvée" });
   });
 
-  // Middleware global de gestion des erreurs
+  // Gestion erreurs
   app.use((err, req, res, next) => {
     console.error("❌ Erreur:", err.stack);
     res.status(500).json({ message: "Erreur interne du serveur" });
   });
 
-  // Tâche CRON (exemple à adapter, n'oublie pas de définir updateLateTickets)
+  // CRON: mise à jour tickets (exemple quotidien à minuit)
   cron.schedule("0 0 * * *", async () => {
     console.log("🔄 Mise à jour des tickets en retard...");
     try {
-      await updateLateTickets(); // À définir/importer
+      await updateLateTickets();
       console.log("✅ Mise à jour terminée !");
       io.emit("tickets:updated", { message: "Tickets mis à jour" });
     } catch (error) {
@@ -128,17 +125,17 @@ let io;
     }
   });
 
-  // Démarrer le serveur
+  // Démarrage serveur
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => {
-    console.log(`🚀 Serveur sur http://localhost:${PORT}`);
+    console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
     if (io.engine.clientsCount === 0) {
       console.log("⚠ Aucun client Socket.io connecté");
     }
   });
 })();
 
-// Gestion des arrêts propres
+// Gestion arrêt propre
 process.on("SIGINT", () => {
   console.log("🛑 Arrêt du serveur...");
   mongoose.connection.close(false, () => {

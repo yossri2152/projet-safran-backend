@@ -13,30 +13,40 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const { authenticateUser, cleanExpiredTokens } = require("./middleware/authMiddleware");
 
-// Fonction fictive pour la tâche CRON (à implémenter)
-async function updateLateTickets() {
-  console.log("Mise à jour des tickets en retard (fonction à implémenter)...");
-}
-
 const app = express();
 const server = http.createServer(app);
 
-// Configuration CORS
+// 🔧 CORS config
 const corsOptions = {
-  origin: "http://localhost:3000",
-  methods: ["GET", "HEAD", "PUT", "PATCH", "POST", "DELETE"],
+  origin: function (origin, callback) {
+    const allowedOrigins = [
+      "http://localhost:3000",
+      "https://ornate-daffodil-0b486e.netlify.app"
+    ];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true,
+  optionsSuccessStatus: 204,
 };
 app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
-// Parse JSON et urlencoded
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// ✅ Si tu utilises des cookies ou proxy
+app.set("trust proxy", 1);
+
 // Middleware nettoyage tokens expirés
 app.use(cleanExpiredTokens);
 
+// Connexion MongoDB
 async function connectDB() {
   try {
     await mongoose.connect(process.env.MONGO_URI, {
@@ -50,24 +60,28 @@ async function connectDB() {
   }
 }
 
+async function updateLateTickets() {
+  console.log("Mise à jour des tickets en retard (fonction à implémenter)...");
+}
+
 async function startServer() {
-  // Connexion MongoDB
   await connectDB();
 
-  // Setup Socket.io
   const io = new Server(server, {
     cors: {
-      origin: "http://localhost:3000",
+      origin: [
+        "http://localhost:3000",
+        "https://ornate-daffodil-0b486e.netlify.app"
+      ],
       methods: ["GET", "POST", "PUT", "DELETE"],
       credentials: true,
     },
     connectionStateRecovery: {
-      maxDisconnectionDuration: 2 * 60 * 1000, // 2 min
+      maxDisconnectionDuration: 2 * 60 * 1000,
       skipMiddlewares: true,
     },
   });
 
-  // Auth Socket.io
   io.use((socket, next) => {
     const token = socket.handshake.auth.token;
     if (!token) return next(new Error("Authentication error"));
@@ -81,7 +95,6 @@ async function startServer() {
   io.on("connection", (socket) => {
     console.log(`📡 Nouvelle connexion WS: ${socket.id} (User ${socket.user.userId})`);
     socket.join(`user_${socket.user.userId}`);
-
     if (socket.user.role === "admin") {
       socket.join("admin_room");
     }
@@ -95,13 +108,12 @@ async function startServer() {
     });
   });
 
-  // Middleware pour fournir io dans req
   app.use((req, res, next) => {
     req.io = io;
     next();
   });
 
-  // Routes
+  // ✅ Routes
   app.use("/auth", authRoutes);
   app.use("/users", userRoutes);
 
@@ -116,7 +128,7 @@ async function startServer() {
     res.status(500).json({ message: "Erreur interne du serveur" });
   });
 
-  // CRON: mise à jour tickets (exemple quotidien à minuit)
+  // CRON job
   cron.schedule("0 0 * * *", async () => {
     console.log("🔄 Mise à jour des tickets en retard...");
     try {
@@ -129,10 +141,10 @@ async function startServer() {
     }
   });
 
-  // Démarrage serveur
+  // Lancement serveur
   const PORT = process.env.PORT || 5000;
-  server.listen(PORT, () => {
-    console.log(`🚀 Serveur lancé sur http://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Serveur lancé sur port ${PORT}`);
     if (io.engine.clientsCount === 0) {
       console.log("⚠ Aucun client Socket.io connecté");
     }
@@ -141,7 +153,7 @@ async function startServer() {
 
 startServer();
 
-// Gestion arrêt propre
+// Arrêt propre
 process.on("SIGINT", () => {
   console.log("🛑 Arrêt du serveur...");
   mongoose.connection.close(false, () => {
